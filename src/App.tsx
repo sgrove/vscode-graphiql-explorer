@@ -6,6 +6,10 @@ import { Webview } from "vscode";
 import GraphiQLExplorer from "graphiql-explorer";
 // @ts-ignore
 import StorageAPI from "graphiql/dist/utility/StorageAPI";
+// @ts-ignore
+import OneGraphAuth from "onegraph-auth";
+import SubmitExamplePanel from "./SubmitExamplePanel.js";
+
 import "graphiql/graphiql.css";
 import "./App.css";
 
@@ -28,6 +32,8 @@ import {
 import prettier from "prettier/standalone";
 import parserGraphql from "prettier/parser-graphql";
 
+console.log("Starting up...");
+
 declare function acquireVsCodeApi(): Webview;
 
 class Storage {
@@ -47,6 +53,10 @@ type State = {
   currentOperation: string | null;
   initialOperation: string | null;
   targetSource: GraphQLSource | null;
+  query: string | null;
+  variables: Object | null;
+  result: Object | null;
+  submitExampleIsOpen: boolean;
 };
 
 type Action =
@@ -63,7 +73,26 @@ type Action =
       schema: GraphQLSchema;
       targetSource: GraphQLSource;
       initialOperation: string;
-    };
+    }
+  | { type: "toggleSubmitExample" };
+
+const APP_ID = "0b066ba6-ed39-4db8-a497-ba0be34d5b2a";
+const baseUrl = new URL("https://serve.onegraph.com");
+const fetchUrl = new URL(baseUrl.toString());
+fetchUrl.pathname = "/graphql";
+fetchUrl.searchParams.set("app_id", APP_ID);
+
+const Config = {
+  appId: APP_ID,
+  oneGraphOrigin: baseUrl.toString(),
+  oneGraphUrl: fetchUrl.toString()
+};
+
+const _oneGraphAuth = new OneGraphAuth({
+  oneGraphOrigin: Config.oneGraphOrigin,
+  appId: APP_ID,
+  communicationMode: "post_message"
+});
 
 let getEmptyState = (): State => ({
   error: null,
@@ -71,7 +100,11 @@ let getEmptyState = (): State => ({
   command: null,
   initialOperation: null,
   currentOperation: null,
-  targetSource: null
+  targetSource: null,
+  query: null,
+  variables: null,
+  result: null,
+  submitExampleIsOpen: false
 });
 
 function reducer(state: State, action: Action): State {
@@ -104,7 +137,11 @@ function reducer(state: State, action: Action): State {
         schema: action.schema,
         targetSource: action.targetSource,
         initialOperation: action.initialOperation,
-        currentOperation: prettify(action.initialOperation)
+        currentOperation: prettify(action.initialOperation),
+        query: prettify(action.initialOperation),
+        variables: null,
+        result: null,
+        submitExampleIsOpen: false
       };
     case "setShow":
       return {
@@ -117,6 +154,11 @@ function reducer(state: State, action: Action): State {
         ...getEmptyState(),
         command: action.command,
         schema: action.schema
+      };
+    case "toggleSubmitExample":
+      return {
+        ...state,
+        submitExampleIsOpen: !state.submitExampleIsOpen
       };
   }
 }
@@ -302,6 +344,12 @@ function App() {
     }
   }, [command]);
 
+  const _toggleSubmitExample = () => {
+    dispatch({ type: "toggleSubmitExample" });
+  };
+
+  console.log("Rendering view...");
+
   return (
     <div className="App">
       <MessageHandler
@@ -344,14 +392,31 @@ function App() {
                 label={command.type === "show" ? "Close" : "Cancel (Esc)"}
                 title={command.type === "show" ? "Close" : "Cancel (Esc)"}
               />
+              <GraphiQL.Button
+                onClick={() => dispatch({ type: "prettifyOperation" })}
+                label="Share example"
+                title="Share example"
+              />
             </GraphiQL.Toolbar>
           </GraphiQL>
         </div>
       ) : (
         <span>Loading...</span>
       )}
+      {state.submitExampleIsOpen ? (
+        <SubmitExamplePanel
+          query={state.query}
+          variables={state.variables}
+          oneGraphAuth={_oneGraphAuth}
+          exampleStorageRepo={{ owner: "OneGraph", name: "graphql-docs" }}
+          hidePanel={_toggleSubmitExample}
+          oneGraphOrigin={Config.oneGraphOrigin}
+          result={state.result}
+        />
+      ) : null}
     </div>
   );
 }
 
+console.debug("WTF!");
 export default App;
